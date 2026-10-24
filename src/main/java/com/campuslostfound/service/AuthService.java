@@ -124,8 +124,7 @@ public class AuthService {
         }
 
         // Generate JWT after successful login
-        return jwtService.generateToken(
-                user.getEmail(),
-                user.getRole());
+        System.out.println("Login credentials verified; generating JWT...");
+return jwtService.generateToken(user.getEmail(), user.getRole());
     }
 }
