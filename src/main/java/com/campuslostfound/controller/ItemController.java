@@ -5,6 +5,8 @@ import com.campuslostfound.entity.Item;
 import com.campuslostfound.entity.User;
 import com.campuslostfound.repository.UserRepository;
 import com.campuslostfound.service.ItemService;
+import com.cloudinary.Cloudinary;
+import com.cloudinary.utils.ObjectUtils;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -12,12 +14,8 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/items")
@@ -25,15 +23,15 @@ public class ItemController {
 
     private final ItemService itemService;
     private final UserRepository userRepository;
-
-    private final Path uploadDirectory =
-            Paths.get("uploads").toAbsolutePath().normalize();
+    private final Cloudinary cloudinary;
 
     public ItemController(
             ItemService itemService,
-            UserRepository userRepository) {
+            UserRepository userRepository,
+            Cloudinary cloudinary) {
         this.itemService = itemService;
         this.userRepository = userRepository;
+        this.cloudinary = cloudinary;
     }
 
     // Add an item and record its poster
@@ -49,7 +47,8 @@ public class ItemController {
                     !authentication.isAuthenticated() ||
                     "anonymousUser".equals(authentication.getName())) {
                 return ResponseEntity.status(401)
-                        .body(Map.of("message", "Please log in first."));
+                        .body(Map.of("message",
+                                "Please log in first."));
             }
 
             String email = authentication.getName();
@@ -59,7 +58,6 @@ public class ItemController {
                             new IllegalArgumentException(
                                     "Logged-in user was not found."));
 
-            // Save the logged-in user as the item poster
             item.setPostedBy(poster);
 
             if (image != null && !image.isEmpty()) {
@@ -80,28 +78,26 @@ public class ItemController {
                                     "Image must be smaller than 5 MB."));
                 }
 
-                Files.createDirectories(uploadDirectory);
+                // Upload the image to Cloudinary
+                Map<?, ?> uploadResult = cloudinary.uploader().upload(
+                        image.getBytes(),
+                        ObjectUtils.asMap(
+                                "resource_type", "image",
+                                "folder", "campus-lost-found"
+                        )
+                );
 
-                String originalName = image.getOriginalFilename();
-                String extension = "";
+                String imageUrl =
+                        (String) uploadResult.get("secure_url");
 
-                if (originalName != null &&
-                        originalName.lastIndexOf(".") >= 0) {
-                    extension = originalName.substring(
-                            originalName.lastIndexOf("."));
+                if (imageUrl == null || imageUrl.isBlank()) {
+                    return ResponseEntity.internalServerError()
+                            .body(Map.of("message",
+                                    "Image upload did not return a URL."));
                 }
 
-                String fileName = UUID.randomUUID() + extension;
-                Path filePath = uploadDirectory.resolve(fileName)
-                        .normalize();
-
-                if (!filePath.startsWith(uploadDirectory)) {
-                    return ResponseEntity.badRequest()
-                            .body(Map.of("message", "Invalid file name."));
-                }
-
-                image.transferTo(filePath);
-                item.setImagePath("/uploads/" + fileName);
+                // Save the permanent image URL in MySQL
+                item.setImagePath(imageUrl);
             }
 
             Item savedItem = itemService.addItem(item);
@@ -110,10 +106,14 @@ public class ItemController {
         } catch (IOException e) {
             return ResponseEntity.internalServerError()
                     .body(Map.of("message",
-                            "Unable to save the item image."));
+                            "Unable to read the uploaded image."));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest()
                     .body(Map.of("message", e.getMessage()));
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError()
+                    .body(Map.of("message",
+                            "Unable to upload the image or save the item."));
         }
     }
 
@@ -123,12 +123,14 @@ public class ItemController {
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<Item> getItemById(@PathVariable Long id) {
+    public ResponseEntity<Item> getItemById(
+            @PathVariable Long id) {
         return ResponseEntity.ok(itemService.getItemById(id));
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<String> deleteItem(@PathVariable Long id) {
+    public ResponseEntity<String> deleteItem(
+            @PathVariable Long id) {
         itemService.deleteItem(id);
         return ResponseEntity.ok("Item deleted successfully");
     }
