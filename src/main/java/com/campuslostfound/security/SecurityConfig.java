@@ -50,12 +50,15 @@ public class SecurityConfig {
         CorsConfiguration configuration = new CorsConfiguration();
 
         configuration.setAllowedOrigins(List.of(
-                "http://localhost:5173",
-                "http://localhost:5174",
-                "http://localhost:5175",
-                "http://localhost:5176",
-                "http://localhost:5177"
-        ));
+        "http://localhost:5173",
+        "http://localhost:5174",
+        "http://localhost:5175",
+        "http://localhost:5176",
+        "http://localhost:5177",
+        "https://campus-lost-found-frontend-blush.vercel.app",
+        "https://campus-lost-found-frontend-pnt2g1le2-bitlahasini04.vercel.app"
+));
+
 
         configuration.setAllowedMethods(List.of(
                 "GET",
